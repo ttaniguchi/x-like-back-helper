@@ -5,7 +5,6 @@
   "description": "Xでいいねしてくれた人へのお返しを簡単にする支援ツール",
   "permissions": [
     "storage",
-    "tabs",
     "activeTab"
   ],
   "action": {
