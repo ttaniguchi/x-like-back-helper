@@ -43,7 +43,13 @@ function getSelfInfo() {
  */
 function scanLikesPage() {
   const users = [];
-  const handleSpans = Array.from(document.querySelectorAll('span')).filter(span => {
+  
+  // Target only the primary column to avoid sidebar "Who to follow" users
+  const mainContent = document.querySelector('[data-testid="primaryColumn"]') || 
+                      document.querySelector('main[role="main"]') || 
+                      document;
+
+  const handleSpans = Array.from(mainContent.querySelectorAll('span')).filter(span => {
     const text = span.textContent.trim();
     return text.startsWith('@') && text.length > 1 && text.length < 30;
   });
