@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "X Liked-back Helper",
+  "version": "1.0.0",
+  "description": "Xでいいねしてくれた人へのお返しを簡単にする支援ツール",
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
