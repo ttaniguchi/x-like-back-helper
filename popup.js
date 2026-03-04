@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   const userListContainer = document.getElementById('user-list');
   const statusElement = document.getElementById('current-status');
-  const fetchBtn = document.getElementById('fetch-btn');
+  const listCountElement = document.getElementById('list-count');
   const resetBtn = document.getElementById('reset-btn');
   const showDoneToggle = document.getElementById('show-done-toggle');
   const selfIcon = document.getElementById('self-icon');
@@ -10,6 +10,84 @@ document.addEventListener('DOMContentLoaded', () => {
   loadList();
   loadSelfInfo();
   autoRefreshSelfInfo();
+  checkCurrentPageStatus();
+
+  let isUpdatingLocally = false;
+
+  // Listen for background updates from content script infinite scroll
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.userList && !isUpdatingLocally) {
+      loadList();
+    }
+  });
+
+  // Listen for keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+    
+    // 'x' for primary action (navigate to likes or select first user)
+    if (key === 'x') {
+      const gotoLikesLink = document.getElementById('inline-goto-likes');
+      if (gotoLikesLink) {
+        gotoLikesLink.click();
+      } else {
+        const firstUser = userListContainer.querySelector('.user-item:not(.is-done)');
+        if (firstUser) {
+          firstUser.click();
+        }
+      }
+    }
+    // 'r' for Reset
+    else if (key === 'r') {
+      resetBtn.click();
+    }
+    // 'd' for Toggle Done
+    else if (key === 'd') {
+      showDoneToggle.click();
+    }
+    // '1'-'9' for selecting users
+    else if (/^[1-9]$/.test(key)) {
+      const idx = parseInt(key) - 1;
+      const visibleItems = userListContainer.querySelectorAll('.user-item:not(.is-done)');
+      if (visibleItems[idx]) {
+        visibleItems[idx].click();
+      }
+    }
+  });
+
+  /**
+   * Check current page and update status message
+   */
+  function checkCurrentPageStatus() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const activeTab = tabs[0];
+      if (!activeTab || !activeTab.url) return;
+      
+      const isLikesPage = /\/status\/\d+\/(likes|retweets|quotes)/.test(activeTab.url);
+      const isPostDetail = /\/status\/\d+/.test(activeTab.url) && !isLikesPage;
+
+      if (isLikesPage) {
+        statusElement.innerHTML = '画面をスクロールしてください';
+      } else if (isPostDetail) {
+        statusElement.innerHTML = `
+          <div style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; color: var(--primary-color);" id="inline-goto-likes">
+            <span style="font-weight: bold; text-decoration: underline;">いいね一覧へ移動</span>
+            <span style="font-size: 1rem;">❤️</span>
+          </div>
+        `;
+        document.getElementById('inline-goto-likes').addEventListener('click', (e) => {
+          e.preventDefault();
+          const match = activeTab.url.match(/(https:\/\/(?:x|twitter)\.com\/\w+\/status\/\d+)/);
+          if (match) {
+            chrome.tabs.update({ url: `${match[1]}/likes` });
+            window.close();
+          }
+        });
+      } else {
+        statusElement.innerHTML = 'いいねを返したいポストを開いて';
+      }
+    });
+  }
 
   /**
    * Attempt to fetch self-account info whenever popup opens
@@ -26,35 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /**
-   * Main fetch action
-   */
-  fetchBtn.addEventListener('click', () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const activeTab = tabs[0];
-      if (activeTab.url.includes('/status/') && activeTab.url.includes('/likes')) {
-        statusElement.textContent = '解析中...';
-        chrome.tabs.sendMessage(activeTab.id, { action: 'SCAN_LIKERS' }, (response) => {
-          if (chrome.runtime.lastError) {
-            showReloadPrompt('接続が切れました。ページを再読み込みしますか？');
-            return;
-          }
-          if (response) {
-            if (response.users) saveUsers(response.users);
-            if (response.selfInfo) saveSelfInfo(response.selfInfo);
-          }
-        });
-      } else {
-        // Fallback: Refresh self-info even if not on likes page
-        chrome.tabs.sendMessage(activeTab.id, { action: 'GET_SELF_INFO' }, (response) => {
-          if (!chrome.runtime.lastError && response && response.selfInfo) {
-            saveSelfInfo(response.selfInfo);
-          }
-        });
-        statusElement.textContent = '「いいね」一覧ページを開いてください';
-      }
-    });
-  });
+
 
   /**
    * UI Error recovery
@@ -151,7 +201,12 @@ document.addEventListener('DOMContentLoaded', () => {
           addedCount++;
         } else {
           const existing = userMap.get(u.handle);
-          userMap.set(u.handle, { ...existing, followStatus: u.followStatus });
+          userMap.set(u.handle, { 
+            ...existing, 
+            followStatus: u.followStatus !== 'none' ? u.followStatus : existing.followStatus,
+            name: u.name || existing.name || '',
+            avatar: u.avatar || existing.avatar || ''
+          });
         }
       });
       
@@ -174,6 +229,10 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function renderUserList(users) {
     const showDone = showDoneToggle.checked;
+    const remainingCount = users.filter(u => !u.done).length;
+    const totalCount = users.length;
+    listCountElement.textContent = `${remainingCount} / ${totalCount}`;
+
     const filteredVisible = users.filter(u => showDone || !u.done);
 
     if (filteredVisible.length === 0) {
@@ -202,20 +261,18 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="user-name">${user.name} ${statusEmoji}</span>
           <span class="user-handle">${user.handle}</span>
         </div>
-        <button class="action-btn" data-handle="${user.handle}" data-index="${originalIndex}">${user.done ? '済' : 'お返し'}</button>
+        <span class="action-label-flat">${user.done ? '済' : 'HOME'}</span>
       `;
       
-      const btn = userItem.querySelector('.action-btn');
       if (!user.done) {
-        btn.addEventListener('click', (e) => {
-          const handle = e.target.getAttribute('data-handle');
-          const idx = e.target.getAttribute('data-index');
+        userItem.addEventListener('click', () => {
+          const handle = user.handle;
           
           userItem.classList.add('removing');
-          markAsDone(idx, false);
+          markAsDone(originalIndex, false);
           
           setTimeout(() => {
-            const targetUrl = `https://x.com/${handle.replace('@', '')}/media`;
+            const targetUrl = `https://x.com/${handle.replace('@', '')}`;
             chrome.tabs.update({ url: targetUrl });
             window.close();
           }, 500);
@@ -231,7 +288,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const list = result.userList || [];
       if (list[index]) {
         list[index].done = true;
+        isUpdatingLocally = true;
         chrome.storage.local.set({ userList: list }, () => {
+          setTimeout(() => { isUpdatingLocally = false }, 100);
           if (shouldRender) renderUserList(list);
         });
       }

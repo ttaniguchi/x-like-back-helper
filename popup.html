@@ -25,19 +25,17 @@
     </header>
 
     <div class="status-card">
-      <div class="status-label">現在のページ</div>
-      <div id="current-status" class="status-value">「いいね」一覧を開いてください</div>
+      <div id="current-status" class="status-value">いいねを返したいポストを開いて</div>
     </div>
 
-    <div class="controls" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
-      <button id="fetch-btn" class="action-btn" style="flex: 2;">リスト取得</button>
-      <button id="reset-btn" class="action-btn secondary" style="flex: 1;">リセット</button>
-    </div>
-
-    <div class="filter-controls" style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
-      <label style="font-size: 0.75rem; color: var(--secondary-text); display: flex; align-items: center; cursor: pointer;">
-        <input type="checkbox" id="show-done-toggle" style="margin-right: 4px;"> 完了を表示
+    <div class="controls" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; background: rgba(255, 255, 255, 0.4); padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.3);">
+      <span id="list-count" style="font-size: 0.85rem; font-weight: bold; color: var(--primary-color); white-space: nowrap;">0 / 0</span>
+      
+      <label style="font-size: 0.75rem; color: var(--secondary-text); display: flex; align-items: center; cursor: pointer; white-space: nowrap;">
+        <input type="checkbox" id="show-done-toggle" style="margin-right: 4px;"> 完了表示
       </label>
+      
+      <button id="reset-btn" class="action-btn secondary" style="padding: 4px 10px; font-size: 0.65rem;">リセット</button>
     </div>
 
     <div class="section-title" style="font-size: 0.8rem; font-weight: 700; margin-bottom: 8px; color: var(--secondary-text);">
@@ -46,7 +44,7 @@
 
     <div id="user-list" class="user-list">
       <div class="empty-state" style="text-align: center; padding: 20px; color: var(--secondary-text); font-size: 0.8rem;">
-        「リスト取得」を押すとユーザーが表示されます。
+        対象ページを開いてスクロールすると自動で追加されます。
       </div>
     </div>
   </div>
