@@ -19,6 +19,8 @@ mkdir -p "$RELEASE_DIR"
 # Zip files
 zip -r "$RELEASE_DIR/$PACKAGE_NAME" \
   manifest.json \
+  background.js \
+  constants.js \
   content.js \
   popup.html \
   popup.js \
