@@ -1,29 +1,84 @@
+/**
+ * Content Script for X Liked-back Helper
+ */
+
+// --- Message Handler ---
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'SCAN_LIKERS') {
-    const users = scanLikesPage();
-    const selfInfo = getSelfInfo();
-    saveUsersToStorage(users);
-    sendResponse({ users, selfInfo });
-  } else if (request.action === 'GET_SELF_INFO') {
-    sendResponse({ selfInfo: getSelfInfo() });
+  const { action } = request;
+
+  switch (action) {
+    case ACTIONS.SCAN_LIKERS:
+      const users = scanLikesPage();
+      const selfInfo = getSelfInfo();
+      saveUsersToStorage(users);
+      sendResponse({ users, selfInfo });
+      break;
+    case ACTIONS.GET_SELF_INFO:
+      sendResponse({ selfInfo: getSelfInfo() });
+      break;
+    case ACTIONS.LIKE_TOP_TWEET:
+      sendResponse(likeTopTweet());
+      break;
+    case ACTIONS.NEXT_POST:
+      sendResponse(navigatePost(1));
+      break;
+    case ACTIONS.PREV_POST:
+      sendResponse(navigatePost(-1));
+      break;
   }
   return true;
 });
 
+// --- UI Indicators & Styles ---
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes x-like-helper-ripple {
+    0% { transform: scale(0.5); opacity: 1; }
+    100% { transform: scale(2.5); opacity: 0; }
+  }
+  .x-like-helper-highlight {
+    position: fixed;
+    border: 4px solid #1d9bf0;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9999;
+    animation: x-like-helper-ripple 0.8s ease-out;
+  }
+  .x-like-helper-target-indicator {
+    position: fixed;
+    border: 2px dashed #1d9bf0;
+    background: rgba(29, 155, 240, 0.1);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9998;
+    transition: all 0.15s ease-out;
+    opacity: 0;
+  }
+`;
+document.head.appendChild(style);
+
+const indicator = document.createElement('div');
+indicator.className = 'x-like-helper-target-indicator';
+document.body.appendChild(indicator);
+
+// --- State & Observing ---
 let isObserving = false;
 let observer = null;
 let scanTimeout = null;
+let currentUrl = window.location.href;
+let navIndexOffset = 0;
+let lastScrollY = window.scrollY;
 
 function checkUrlAndObserve() {
-  const targetRegex = /\/status\/\d+\/(likes|retweets|quotes)/;
-  if (targetRegex.test(window.location.href)) {
-    if (!isObserving) {
-      startObserving();
-    }
-  } else {
-    if (isObserving) {
-      stopObserving();
-    }
+  if (window.location.href !== currentUrl) {
+    currentUrl = window.location.href;
+    navIndexOffset = 0; 
+  }
+  
+  if (URL_PATTERNS.LIKES_PAGE.test(window.location.href)) {
+    if (!isObserving) startObserving();
+  } else if (isObserving) {
+    stopObserving();
   }
 }
 
@@ -33,12 +88,9 @@ function startObserving() {
     if (scanTimeout) clearTimeout(scanTimeout);
     scanTimeout = setTimeout(() => {
       const users = scanLikesPage();
-      if (users.length > 0) {
-        saveUsersToStorage(users);
-      }
-    }, 500); // debounce 500ms
+      if (users.length > 0) saveUsersToStorage(users);
+    }, UI_CONFIG.DEBOUNCE_SCAN_MS);
   });
-  
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
@@ -50,10 +102,11 @@ function stopObserving() {
   }
 }
 
+// --- Data Layer ---
 function saveUsersToStorage(newUsers) {
-  if (!newUsers || newUsers.length === 0) return;
-  chrome.storage.local.get(['userList'], (result) => {
-    const existingList = result.userList || [];
+  if (!newUsers?.length) return;
+  chrome.storage.local.get([STORAGE_KEYS.USER_LIST], (result) => {
+    const existingList = result[STORAGE_KEYS.USER_LIST] || [];
     const userMap = new Map(existingList.map(u => [u.handle, u]));
     
     newUsers.forEach(u => {
@@ -70,70 +123,46 @@ function saveUsersToStorage(newUsers) {
       }
     });
     
-    const updatedList = Array.from(userMap.values());
-    chrome.storage.local.set({ userList: updatedList });
+    chrome.storage.local.set({ [STORAGE_KEYS.USER_LIST]: Array.from(userMap.values()) });
   });
 }
 
-// Check URL periodically to detect SPA navigation
-setInterval(checkUrlAndObserve, 2000);
-// Check immediately
-checkUrlAndObserve();
-
-
-/**
- * Get current user's profile info from X sidebar
- */
+// --- Profile Scanner ---
 function getSelfInfo() {
   try {
-    let handle = '';
-    let avatar = '';
+    const profileLink = document.querySelector(SELECTORS.PROFILE_LINK);
+    let handle = '', avatar = '';
 
-    // Priority 1: Side navigation profile link for handle
-    const profileLink = document.querySelector('a[data-testid="AppTabBar_Profile_Link"]');
     if (profileLink) {
-      const href = profileLink.getAttribute('href') || '';
-      const h = href.replace('/', '');
-      if (h && h !== 'profile') {
-        handle = `@${h}`;
-      }
+      const h = (profileLink.getAttribute('href') || '').replace('/', '');
+      if (h && h !== 'profile') handle = `@${h}`;
       const img = profileLink.querySelector('img');
-      if (img && img.src) avatar = img.src;
+      if (img?.src) avatar = img.src;
     }
 
-    // Priority 2: Account switcher button for avatar (more reliable for the image)
-    const switcher = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+    const switcher = document.querySelector(SELECTORS.ACCOUNT_SWITCHER);
     if (switcher) {
       const img = switcher.querySelector('img');
-      if (img && img.src) avatar = img.src;
-      
+      if (img?.src) avatar = img.src;
       if (!handle) {
-        const ariaLabel = switcher.getAttribute('aria-label') || '';
-        const handleMatch = ariaLabel.match(/@(\w+)/);
+        const handleMatch = (switcher.getAttribute('aria-label') || '').match(/@(\w+)/);
         if (handleMatch) handle = handleMatch[0];
       }
     }
 
-    if (handle) {
-      return { handle, avatar };
-    }
+    return handle ? { handle, avatar } : null;
   } catch (e) {
+    return null;
   }
-  return null;
 }
 
-/**
- * Scan the current "Likes" page for user info and follow status
- */
 function scanLikesPage() {
   const users = [];
-  
-  // Target only the primary column to avoid sidebar "Who to follow" users
-  const mainContent = document.querySelector('[data-testid="primaryColumn"]') || 
-                      document.querySelector('main[role="main"]') || 
+  const mainContent = document.querySelector(SELECTORS.PRIMARY_COLUMN) || 
+                      document.querySelector(SELECTORS.MAIN_CONTENT) || 
                       document;
 
-  const userCells = Array.from(mainContent.querySelectorAll('[data-testid="UserCell"]'));
+  const userCells = Array.from(mainContent.querySelectorAll(SELECTORS.USER_CELL));
   
   if (userCells.length > 0) {
     userCells.forEach(cell => {
@@ -146,7 +175,6 @@ function scanLikesPage() {
         
         if (!handleSpan) return;
         const handle = handleSpan.textContent.trim();
-        
         const avatarImg = cell.querySelector('img[src*="profile_images"]');
         const avatar = avatarImg ? avatarImg.src : '';
         
@@ -155,31 +183,24 @@ function scanLikesPage() {
         const isFollowing = fullText.includes('Following') || fullText.includes('フォロー中');
         
         let followStatus = 'none';
-        if (isFollower && isFollowing) {
-          followStatus = 'mutual';
-        } else if (isFollower) {
-          followStatus = 'follower';
-        } else if (isFollowing) {
-          followStatus = 'following';
-        }
+        if (isFollower && isFollowing) followStatus = 'mutual';
+        else if (isFollower) followStatus = 'follower';
+        else if (isFollowing) followStatus = 'following';
 
         let name = '';
         for (let s of spans) {
           const t = s.textContent.trim();
-          if (t && t !== handle && !t.includes('Follow') && !t.includes('フォロー') && !t.includes('認証済み') && !t.includes('Verified')) {
+          if (t && t !== handle && !/Follow|フォロー|認証済み|Verified/.test(t)) {
             name = t;
             break;
           }
         }
         
-        if (name === handle) name = '';
-
-        users.push({ name: name, handle, avatar, followStatus, done: false });
-      } catch (e) {
-      }
+        users.push({ name: name === handle ? '' : name, handle, avatar, followStatus, done: false });
+      } catch (e) {}
     });
   } else {
-    // Fallback if structured cells aren't found
+    // Fallback scanner
     const handleSpans = Array.from(mainContent.querySelectorAll('span')).filter(span => {
       const text = span.textContent.trim();
       return text.startsWith('@') && text.length > 1 && text.length < 30;
@@ -188,25 +209,142 @@ function scanLikesPage() {
     handleSpans.forEach(handleSpan => {
       try {
         const handle = handleSpan.textContent.trim();
-        
-        // Try to find a nearby avatar image
-        let avatar = '';
-        let parent = handleSpan.parentElement;
-        for (let i = 0; i < 5; i++) {
-          if (!parent) break;
+        let avatar = '', parent = handleSpan.parentElement;
+        for (let i = 0; i < 5 && parent; i++) {
           const img = parent.querySelector('img[src*="profile_images"]');
-          if (img) {
-            avatar = img.src;
-            break;
-          }
+          if (img) { avatar = img.src; break; }
           parent = parent.parentElement;
         }
-
         users.push({ name: '', handle, avatar, followStatus: 'none', done: false });
       } catch (e) {}
     });
   }
 
-  // Deduplicate by handle
   return Array.from(new Map(users.map(u => [u.handle, u])).values());
 }
+
+// --- Navigation & Actions ---
+function likeTopTweet() {
+  try {
+    const bestPost = getBestPost();
+    if (!bestPost) return { success: false, message: 'ポストが見つかりません' };
+
+    const likeButton = bestPost.querySelector(SELECTORS.LIKE_BTN);
+    const unlikedButton = bestPost.querySelector(SELECTORS.UNLIKE_BTN);
+    const targetButton = likeButton || unlikedButton;
+
+    if (targetButton) {
+      highlightElement(targetButton);
+      if (likeButton) {
+        likeButton.click();
+        return { success: true, message: 'いいねしました' };
+      }
+      return { success: true, message: 'すでにいいねされています' };
+    }
+    return { success: false, message: 'いいねボタンが見つかりません' };
+  } catch (e) {
+    return { success: false, message: 'エラーが発生しました' };
+  }
+}
+
+function getBestPost() {
+  const posts = Array.from(document.querySelectorAll(SELECTORS.TWEET));
+  if (!posts.length) return null;
+
+  let baseIndex = 0;
+  let minDistance = Infinity;
+  
+  posts.forEach((post, index) => {
+    const rect = post.getBoundingClientRect();
+    const distance = Math.abs(rect.top - UI_CONFIG.HEADER_HEIGHT);
+    if (distance < minDistance) {
+      minDistance = distance;
+      baseIndex = index;
+    }
+  });
+
+  navIndexOffset = Math.max(-baseIndex, Math.min((posts.length - 1) - baseIndex, navIndexOffset));
+  return posts[baseIndex + navIndexOffset];
+}
+
+function navigatePost(direction) {
+  const posts = Array.from(document.querySelectorAll(SELECTORS.TWEET));
+  if (!posts.length) return { success: false };
+
+  navIndexOffset += direction;
+  const bestPost = getBestPost();
+  if (bestPost) {
+    const scrollAmount = bestPost.getBoundingClientRect().top - UI_CONFIG.HEADER_HEIGHT;
+    if (Math.abs(scrollAmount) > 1) {
+      window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+      lastScrollY = window.scrollY + scrollAmount; 
+    }
+    updatePreviewHighlight();
+    return { success: true };
+  }
+  return { success: false };
+}
+
+function updatePreviewHighlight() {
+  const currentScrollY = window.scrollY;
+  if (Math.abs(currentScrollY - lastScrollY) > 50) navIndexOffset = 0;
+  lastScrollY = currentScrollY;
+
+  const url = window.location.href;
+  const isPostDetail = URL_PATTERNS.POST_DETAIL.test(url) && !URL_PATTERNS.LIKES_PAGE.test(url);
+  const isEligible = /https:\/\/(x|twitter)\.com\/(home|search|\w+)/.test(url) && !isPostDetail;
+  
+  if (!isEligible) {
+    indicator.style.opacity = '0';
+    return;
+  }
+
+  const bestPost = getBestPost();
+  if (bestPost) {
+    const button = bestPost.querySelector(SELECTORS.LIKE_BTN) || bestPost.querySelector(SELECTORS.UNLIKE_BTN);
+    if (button) {
+      const rect = button.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height) * 1.2;
+      Object.assign(indicator.style, {
+        width: `${size}px`,
+        height: `${size}px`,
+        left: `${rect.left + rect.width / 2 - size / 2}px`,
+        top: `${rect.top + rect.height / 2 - size / 2}px`,
+        opacity: '1'
+      });
+      return;
+    }
+  }
+  indicator.style.opacity = '0';
+}
+
+function highlightElement(el) {
+  const rect = el.getBoundingClientRect();
+  const hl = document.createElement('div');
+  hl.className = 'x-like-helper-highlight';
+  const size = Math.max(rect.width, rect.height) * 1.5;
+  Object.assign(hl.style, {
+    width: `${size}px`,
+    height: `${size}px`,
+    left: `${rect.left + rect.width / 2 - size / 2}px`,
+    top: `${rect.top + rect.height / 2 - size / 2}px`
+  });
+  document.body.appendChild(hl);
+  setTimeout(() => hl.remove(), 800);
+}
+
+// --- Lifecycle ---
+setInterval(checkUrlAndObserve, UI_CONFIG.URL_CHECK_INTERVAL_MS);
+checkUrlAndObserve();
+
+window.addEventListener('scroll', () => {
+  if (scrollTimeout) return;
+  scrollTimeout = requestAnimationFrame(() => {
+    updatePreviewHighlight();
+    scrollTimeout = null;
+  });
+}, { passive: true });
+let scrollTimeout = null;
+
+window.addEventListener('resize', updatePreviewHighlight);
+setInterval(updatePreviewHighlight, 1000);

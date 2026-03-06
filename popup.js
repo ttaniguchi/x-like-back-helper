@@ -1,299 +1,245 @@
-document.addEventListener('DOMContentLoaded', () => {
-  const userListContainer = document.getElementById('user-list');
-  const statusElement = document.getElementById('current-status');
-  const listCountElement = document.getElementById('list-count');
-  const resetBtn = document.getElementById('reset-btn');
-  const showDoneToggle = document.getElementById('show-done-toggle');
-  const selfIcon = document.getElementById('self-icon');
+/**
+ * Side Panel Script for X Liked-back Helper
+ */
 
-  // Initialization
-  loadList();
-  loadSelfInfo();
-  autoRefreshSelfInfo();
-  checkCurrentPageStatus();
+document.addEventListener('DOMContentLoaded', async () => {
+  // --- Element Cache ---
+  const els = {
+    userList: document.getElementById('user-list'),
+    status: document.getElementById('current-status'),
+    listCount: document.getElementById('list-count'),
+    resetBtn: document.getElementById('reset-btn'),
+    showDoneToggle: document.getElementById('show-done-toggle'),
+    selfIcon: document.getElementById('self-icon-header'),
+    likeBtn: document.getElementById('like-top-btn'),
+    prevBtn: document.getElementById('prev-post-btn'),
+    nextBtn: document.getElementById('next-post-btn')
+  };
 
   let isUpdatingLocally = false;
 
-  // Listen for background updates from content script infinite scroll
-  chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'local' && changes.userList && !isUpdatingLocally) {
-      loadList();
-    }
-  });
+  // --- Helpers ---
+  const getActiveTab = async () => {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return tab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+  };
 
-  // Listen for keyboard shortcuts
-  document.addEventListener('keydown', (e) => {
-    const key = e.key.toLowerCase();
+  const safeSendMessage = async (action, callback) => {
+    const tab = await getActiveTab();
+    if (!tab?.id) return;
     
-    // 'x' for primary action (navigate to likes or select first user)
-    if (key === 'x') {
-      const gotoLikesLink = document.getElementById('inline-goto-likes');
-      if (gotoLikesLink) {
-        gotoLikesLink.click();
-      } else {
-        const firstUser = userListContainer.querySelector('.user-item:not(.is-done)');
-        if (firstUser) {
-          firstUser.click();
+    try {
+      chrome.tabs.sendMessage(tab.id, { action }, (res) => {
+        if (chrome.runtime.lastError) {
+          els.status.textContent = '⛔ ページを一度リロードしてください';
+          return;
         }
-      }
-    }
-    // 'r' for Reset
-    else if (key === 'r') {
-      resetBtn.click();
-    }
-    // 'd' for Toggle Done
-    else if (key === 'd') {
-      showDoneToggle.click();
-    }
-    // '1'-'9' for selecting users
-    else if (/^[1-9]$/.test(key)) {
-      const idx = parseInt(key) - 1;
-      const visibleItems = userListContainer.querySelectorAll('.user-item:not(.is-done)');
-      if (visibleItems[idx]) {
-        visibleItems[idx].click();
-      }
-    }
-  });
+        if (callback && res) callback(res);
+      });
+    } catch (e) {}
+  };
 
-  /**
-   * Check current page and update status message
-   */
-  function checkCurrentPageStatus() {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const activeTab = tabs[0];
-      if (!activeTab || !activeTab.url) return;
+  // --- Focus Management ---
+  const updateFocusUI = () => {
+    document.body.classList.toggle('is-inactive', !document.hasFocus());
+  };
+
+  // --- UI Update Logic ---
+  const checkPageStatus = async () => {
+    try {
+      const tab = await getActiveTab();
+      if (!tab?.url) return;
       
-      const isLikesPage = /\/status\/\d+\/(likes|retweets|quotes)/.test(activeTab.url);
-      const isPostDetail = /\/status\/\d+/.test(activeTab.url) && !isLikesPage;
+      const url = tab.url;
+      const path = new URL(url).pathname.split('/').filter(p => p);
+      
+      const isLikes = URL_PATTERNS.LIKES_PAGE.test(url);
+      const isPost = URL_PATTERNS.POST_DETAIL.test(url) && !isLikes;
+      const isProfile = path.length >= 1 && 
+                        !['home', 'explore', 'notifications', 'messages', 'i', 'settings', 'search', 'bookmarks'].includes(path[0]) &&
+                        !isPost && !isLikes;
 
-      if (isLikesPage) {
-        statusElement.innerHTML = '画面をスクロールしてください';
-      } else if (isPostDetail) {
-        statusElement.innerHTML = `
+      const isEligible = (isProfile || URL_PATTERNS.HOME.test(url) || URL_PATTERNS.SEARCH.test(url)) && 
+                         !URL_PATTERNS.EXPLORE.test(url);
+
+      // Update Messages
+      if (isLikes) {
+        els.status.innerHTML = '画面をスクロールしてください';
+      } else if (isPost) {
+        els.status.innerHTML = `
           <div style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; color: var(--primary-color);" id="inline-goto-likes">
             <span style="font-weight: bold; text-decoration: underline;">いいね一覧へ移動</span>
             <span style="font-size: 1rem;">❤️</span>
-          </div>
-        `;
-        document.getElementById('inline-goto-likes').addEventListener('click', (e) => {
-          e.preventDefault();
-          const match = activeTab.url.match(/(https:\/\/(?:x|twitter)\.com\/\w+\/status\/\d+)/);
-          if (match) {
-            chrome.tabs.update({ url: `${match[1]}/likes` });
-            window.close();
-          }
-        });
+          </div>`;
+        document.getElementById('inline-goto-likes').onclick = () => {
+          const match = url.match(/(https:\/\/(?:x|twitter)\.com\/\w+\/status\/\d+)/);
+          if (match) chrome.tabs.update({ url: `${match[1]}/likes` });
+        };
       } else {
-        statusElement.innerHTML = 'いいねを返したいポストを開いて';
+        els.status.innerHTML = isEligible ? 'プロフィール / タイムラインを表示中' : 'ポスト一覧ページを開いてください';
       }
-    });
-  }
 
-  /**
-   * Attempt to fetch self-account info whenever popup opens
-   */
-  function autoRefreshSelfInfo() {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0] && tabs[0].url.includes('x.com')) {
-        chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_SELF_INFO' }, (response) => {
-          if (response && response.selfInfo) {
-            saveSelfInfo(response.selfInfo);
-          }
-        });
-      }
-    });
-  }
+      // Update Button States
+      [els.likeBtn, els.prevBtn, els.nextBtn].forEach(btn => { if (btn) btn.disabled = !isEligible; });
 
+    } catch (err) {}
+  };
 
-
-  /**
-   * UI Error recovery
-   */
-  function showReloadPrompt(message) {
-    statusElement.innerHTML = `
-      <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
-        <span style="font-size: 0.8rem; color: var(--text-color); font-weight: 500;">${message}</span>
-        <button id="reload-active-tab-btn" class="action-btn secondary" style="padding: 6px 16px; font-size: 0.75rem; border-radius: 6px;">ページを更新する</button>
-      </div>
-    `;
-    const reloadBtn = document.getElementById('reload-active-tab-btn');
-    if (reloadBtn) {
-      reloadBtn.addEventListener('click', () => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          if (tabs[0]) {
-            chrome.tabs.reload(tabs[0].id, {}, () => {
-              window.close();
-            });
-          }
-        });
-      });
-    }
-  }
-
-  /**
-   * Self-account Icon Click (Home Navigation)
-   */
-  selfIcon.addEventListener('click', () => {
-    chrome.storage.local.get(['selfInfo'], (result) => {
-      let handle = result.selfInfo?.handle;
-      const targetUrl = handle ? `https://x.com/${handle.replace('@', '')}` : 'https://x.com/home';
-      chrome.tabs.update({ url: targetUrl });
-      window.close();
-    });
-  });
-
-  function saveSelfInfo(info) {
-    chrome.storage.local.set({ selfInfo: info }, () => {
-      displaySelfInfo(info);
-    });
-  }
-
-  function loadSelfInfo() {
-    chrome.storage.local.get(['selfInfo'], (result) => {
-      if (result.selfInfo) displaySelfInfo(result.selfInfo);
-    });
-  }
-
-  function displaySelfInfo(info) {
-    if (info && info.avatar) {
-      Object.assign(selfIcon.style, {
-        backgroundImage: `url('${info.avatar}')`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-        border: '1px solid rgba(255,255,255,0.5)'
-      });
-      selfIcon.textContent = '';
-    } else {
-      selfIcon.style.backgroundImage = 'none';
-      selfIcon.textContent = 'HOME';
-    }
-  }
-
-  /**
-   * Global Reset
-   */
-  resetBtn.addEventListener('click', () => {
-    if (confirm('リストをリセットしますか？')) {
-      chrome.storage.local.set({ userList: [] }, () => {
-        renderUserList([]);
-        statusElement.textContent = 'リセットしました';
-      });
-    }
-  });
-
-  showDoneToggle.addEventListener('change', () => {
-    loadList();
-  });
-
-  /**
-   * Save and merge users into the persistent list
-   */
-  function saveUsers(newUsers) {
-    chrome.storage.local.get(['userList'], (result) => {
-      const existingList = result.userList || [];
-      const userMap = new Map(existingList.map(u => [u.handle, u]));
-      
-      let addedCount = 0;
-      newUsers.forEach(u => {
-        if (!userMap.has(u.handle)) {
-          userMap.set(u.handle, { ...u, done: false });
-          addedCount++;
-        } else {
-          const existing = userMap.get(u.handle);
-          userMap.set(u.handle, { 
-            ...existing, 
-            followStatus: u.followStatus !== 'none' ? u.followStatus : existing.followStatus,
-            name: u.name || existing.name || '',
-            avatar: u.avatar || existing.avatar || ''
-          });
+  const refreshSelfInfo = async () => {
+    const tab = await getActiveTab();
+    if (tab?.id && tab.url?.includes('x.com')) {
+      chrome.tabs.sendMessage(tab.id, { action: ACTIONS.GET_SELF_INFO }, (res) => {
+        if (res?.selfInfo) {
+          chrome.storage.local.set({ [STORAGE_KEYS.SELF_INFO]: res.selfInfo }, () => renderSelfInfo(res.selfInfo));
         }
       });
-      
-      const updatedList = Array.from(userMap.values());
-      chrome.storage.local.set({ userList: updatedList }, () => {
-        renderUserList(updatedList);
-        statusElement.textContent = `新規${addedCount}件を追加（合計${updatedList.length}件）`;
-      });
-    });
-  }
-
-  function loadList() {
-    chrome.storage.local.get(['userList'], (result) => {
-      renderUserList(result.userList || []);
-    });
-  }
-
-  /**
-   * Render the scrollable user list with filtering and animations
-   */
-  function renderUserList(users) {
-    const showDone = showDoneToggle.checked;
-    const remainingCount = users.filter(u => !u.done).length;
-    const totalCount = users.length;
-    listCountElement.textContent = `${remainingCount} / ${totalCount}`;
-
-    const filteredVisible = users.filter(u => showDone || !u.done);
-
-    if (filteredVisible.length === 0) {
-      userListContainer.innerHTML = '<div class="empty-state" style="text-align: center; padding: 20px; color: var(--secondary-text); font-size: 0.8rem;">リストは空です</div>';
-      return;
     }
+  };
 
-    userListContainer.innerHTML = '';
+  const renderSelfInfo = (info) => {
+    if (info?.avatar && els.selfIcon) {
+      Object.assign(els.selfIcon.style, {
+        backgroundImage: `url('${info.avatar}')`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center'
+      });
+      els.selfIcon.textContent = '';
+    }
+  };
+
+  const renderUserList = (users) => {
+    if (!els.userList) return;
+    const showDone = els.showDoneToggle?.checked;
+    const remaining = users.filter(u => !u.done).length;
     
-    users.forEach((user, originalIndex) => {
+    if (els.listCount) els.listCount.textContent = `${remaining} / ${users.length}`;
+    
+    els.userList.innerHTML = '';
+    let isFirst = true;
+
+    users.forEach((user, idx) => {
       if (!showDone && user.done) return;
-
-      const userItem = document.createElement('div');
-      userItem.className = `user-item ${user.done ? 'is-done' : ''}`;
       
-      const statusEmoji = {
-        'mutual': '🤝',
-        'follower': '💙',
-        'following': '🔖',
-        'none': ''
-      }[user.followStatus || 'none'];
+      const item = document.createElement('div');
+      item.className = `user-item ${user.done ? 'is-done' : ''}`;
+      
+      let label = 'HOME';
+      if (user.done) label = '済';
+      else if (isFirst) { label = 'HOME(N)'; isFirst = false; }
 
-      userItem.innerHTML = `
-        <div class="user-avatar" style="background-image: url('${user.avatar}'); background-size: cover; border: 1px solid rgba(0,0,0,0.1);"></div>
+      item.innerHTML = `
+        <div class="user-avatar" style="background-image: url('${user.avatar}')"></div>
         <div class="user-info">
-          <span class="user-name">${user.name} ${statusEmoji}</span>
+          <span class="user-name">${user.name}</span>
           <span class="user-handle">${user.handle}</span>
         </div>
-        <span class="action-label-flat">${user.done ? '済' : 'HOME'}</span>
-      `;
-      
+        <span class="action-label-flat">${label}</span>`;
+
       if (!user.done) {
-        userItem.addEventListener('click', () => {
-          const handle = user.handle;
-          
-          userItem.classList.add('removing');
-          markAsDone(originalIndex, false);
-          
-          setTimeout(() => {
-            const targetUrl = `https://x.com/${handle.replace('@', '')}`;
-            chrome.tabs.update({ url: targetUrl });
-            window.close();
-          }, 500);
-        });
+        item.onclick = () => {
+          markAsDone(idx);
+          chrome.tabs.update({ url: `https://x.com/${user.handle.replace('@', '')}` });
+        };
       }
-
-      userListContainer.appendChild(userItem);
+      els.userList.appendChild(item);
     });
-  }
 
-  function markAsDone(index, shouldRender = true) {
-    chrome.storage.local.get(['userList'], (result) => {
-      const list = result.userList || [];
-      if (list[index]) {
-        list[index].done = true;
+    if (!els.userList.innerHTML) {
+      els.userList.innerHTML = '<div style="text-align:center;padding:20px;font-size:0.8rem;color:gray;">リストは空です</div>';
+    }
+  };
+
+  const markAsDone = (idx) => {
+    chrome.storage.local.get([STORAGE_KEYS.USER_LIST], (res) => {
+      const list = res[STORAGE_KEYS.USER_LIST] || [];
+      if (list[idx]) {
+        list[idx].done = true;
         isUpdatingLocally = true;
-        chrome.storage.local.set({ userList: list }, () => {
+        chrome.storage.local.set({ [STORAGE_KEYS.USER_LIST]: list }, () => {
           setTimeout(() => { isUpdatingLocally = false }, 100);
-          if (shouldRender) renderUserList(list);
+          renderUserList(list);
         });
       }
     });
-  }
+  };
+
+  const loadAll = () => {
+    chrome.storage.local.get([STORAGE_KEYS.USER_LIST, STORAGE_KEYS.SELF_INFO], (res) => {
+      renderUserList(res[STORAGE_KEYS.USER_LIST] || []);
+      renderSelfInfo(res[STORAGE_KEYS.SELF_INFO]);
+    });
+  };
+
+  // --- Event Listeners ---
+  window.addEventListener('focus', updateFocusUI);
+  window.addEventListener('blur', updateFocusUI);
+  updateFocusUI();
+
+  els.likeBtn?.addEventListener('click', () => {
+    safeSendMessage(ACTIONS.LIKE_TOP_TWEET, (res) => {
+      if (res.message) els.status.textContent = res.message.replace('ツイート', 'ポスト');
+    });
+  });
+
+  els.prevBtn?.addEventListener('click', () => safeSendMessage(ACTIONS.PREV_POST));
+  els.nextBtn?.addEventListener('click', () => safeSendMessage(ACTIONS.NEXT_POST));
+
+  els.resetBtn?.addEventListener('click', () => {
+    if (confirm('リセットしますか？')) {
+      chrome.storage.local.set({ [STORAGE_KEYS.USER_LIST]: [] }, () => {
+        renderUserList([]);
+        els.status.textContent = 'リセットしました';
+      });
+    }
+  });
+
+  els.showDoneToggle?.addEventListener('change', loadAll);
+
+  els.selfIcon?.addEventListener('click', () => {
+    chrome.storage.local.get([STORAGE_KEYS.SELF_INFO], (res) => {
+      const handle = res[STORAGE_KEYS.SELF_INFO]?.handle;
+      chrome.tabs.update({ url: handle ? `https://x.com/${handle.replace('@', '')}` : 'https://x.com/home' });
+    });
+  });
+
+  // Keyboard Shortcuts
+  document.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+    
+    if (key === 'n') {
+      const gotoLikes = document.getElementById('inline-goto-likes');
+      if (gotoLikes) gotoLikes.click();
+      else els.userList?.querySelector('.user-item:not(.is-done)')?.click();
+    }
+    else if (key === 'r') els.resetBtn?.click();
+    else if (key === 'd') els.showDoneToggle?.click();
+    else if (/^[1-9]$/.test(key)) {
+      const visible = els.userList?.querySelectorAll('.user-item:not(.is-done)');
+      visible?.[parseInt(key) - 1]?.click();
+    }
+    else if (['l', 'j', 'k'].includes(key)) {
+      const map = { l: els.likeBtn, j: els.nextBtn, k: els.prevBtn };
+      const btn = map[key];
+      if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
+    }
+  });
+
+  // Chrome Events
+  chrome.storage.onChanged.addListener((changes, ns) => {
+    if (ns === 'local' && changes[STORAGE_KEYS.USER_LIST] && !isUpdatingLocally) loadAll();
+  });
+
+  chrome.tabs.onUpdated.addListener((_, change) => {
+    if (change.url || change.status === 'complete') { checkPageStatus(); refreshSelfInfo(); }
+  });
+
+  chrome.tabs.onActivated.addListener(checkPageStatus);
+  chrome.windows.onFocusChanged.addListener((winId) => {
+    if (winId !== chrome.windows.WINDOW_ID_NONE) checkPageStatus();
+  });
+
+  // --- Initial Start ---
+  loadAll();
+  refreshSelfInfo();
+  setTimeout(checkPageStatus, 200);
 });
