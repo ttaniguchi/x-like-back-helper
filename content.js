@@ -25,6 +25,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case ACTIONS.PREV_POST:
       sendResponse(navigatePost(-1));
       break;
+    case ACTIONS.UPDATE_FOCUS_STATE:
+      isSidePanelActive = request.focused;
+      updatePreviewHighlight();
+      break;
   }
   return true;
 });
@@ -68,6 +72,7 @@ let scanTimeout = null;
 let currentUrl = window.location.href;
 let navIndexOffset = 0;
 let lastScrollY = window.scrollY;
+let isSidePanelActive = false;
 
 function checkUrlAndObserve() {
   if (window.location.href !== currentUrl) {
@@ -294,7 +299,7 @@ function updatePreviewHighlight() {
   const isPostDetail = URL_PATTERNS.POST_DETAIL.test(url) && !URL_PATTERNS.LIKES_PAGE.test(url);
   const isEligible = /https:\/\/(x|twitter)\.com\/(home|search|\w+)/.test(url) && !isPostDetail;
   
-  if (!isEligible) {
+  if (!isEligible || !isSidePanelActive) {
     indicator.style.opacity = '0';
     return;
   }

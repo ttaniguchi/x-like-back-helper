@@ -24,14 +24,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     return tab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
   };
 
-  const safeSendMessage = async (action, callback) => {
+  const safeSendMessage = async (action, payload = null, callback = null) => {
+    if (typeof payload === 'function') {
+      callback = payload;
+      payload = null;
+    }
     const tab = await getActiveTab();
-    if (!tab?.id) return;
+    if (!tab?.id || (!tab.url?.includes('x.com') && !tab.url?.includes('twitter.com'))) return;
     
     try {
-      chrome.tabs.sendMessage(tab.id, { action }, (res) => {
+      chrome.tabs.sendMessage(tab.id, { action, ...payload }, (res) => {
         if (chrome.runtime.lastError) {
-          els.status.textContent = '⛔ ページを一度リロードしてください';
+          if ([ACTIONS.LIKE_TOP_TWEET, ACTIONS.NEXT_POST, ACTIONS.PREV_POST].includes(action)) {
+            els.status.textContent = '⛔ ページを一度リロードしてください';
+          }
           return;
         }
         if (callback && res) callback(res);
@@ -41,7 +47,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // --- Focus Management ---
   const updateFocusUI = () => {
-    document.body.classList.toggle('is-inactive', !document.hasFocus());
+    const focused = document.hasFocus();
+    document.body.classList.toggle('is-inactive', !focused);
+    safeSendMessage(ACTIONS.UPDATE_FOCUS_STATE, { focused });
   };
 
   // --- UI Update Logic ---
@@ -76,7 +84,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (match) chrome.tabs.update({ url: `${match[1]}/likes` });
         };
       } else {
-        els.status.innerHTML = isEligible ? 'プロフィール / タイムラインを表示中' : 'ポスト一覧ページを開いてください';
+        const isX = url.includes('x.com') || url.includes('twitter.com');
+        els.status.innerHTML = isEligible ? 'プロフィール / タイムラインを表示中' : (isX ? 'ポスト一覧ページを開いてください' : 'X.comを開いてください');
       }
 
       // Update Button States
@@ -230,10 +239,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   chrome.tabs.onUpdated.addListener((_, change) => {
-    if (change.url || change.status === 'complete') { checkPageStatus(); refreshSelfInfo(); }
+    if (change.url || change.status === 'complete') { 
+      checkPageStatus(); 
+      refreshSelfInfo(); 
+      updateFocusUI();
+    }
   });
 
-  chrome.tabs.onActivated.addListener(checkPageStatus);
+  chrome.tabs.onActivated.addListener(() => {
+    checkPageStatus();
+    updateFocusUI();
+  });
   chrome.windows.onFocusChanged.addListener((winId) => {
     if (winId !== chrome.windows.WINDOW_ID_NONE) checkPageStatus();
   });
