@@ -51,12 +51,15 @@ style.textContent = `
   .x-like-helper-target-indicator {
     position: fixed;
     border: 2px dashed #1d9bf0;
-    background: rgba(29, 155, 240, 0.1);
-    border-radius: 50%;
+    background: rgba(29, 155, 240, 0.05); /* わずかに背景もつける */
     pointer-events: none;
     z-index: 9998;
-    transition: all 0.15s ease-out;
+    transition: all 0.1s ease-out;
     opacity: 0;
+    border-radius: 4px; /* ちょっと角を丸く */
+  }
+  .x-like-helper-bg-highlight {
+    display: none; /* 個別のBG用要素は不要になったので非表示 */
   }
 `;
 document.head.appendChild(style);
@@ -64,6 +67,10 @@ document.head.appendChild(style);
 const indicator = document.createElement('div');
 indicator.className = 'x-like-helper-target-indicator';
 document.body.appendChild(indicator);
+
+const bgHighlight = document.createElement('div');
+bgHighlight.className = 'x-like-helper-bg-highlight';
+document.body.appendChild(bgHighlight);
 
 // --- State & Observing ---
 let isObserving = false;
@@ -301,26 +308,29 @@ function updatePreviewHighlight() {
   
   if (!isEligible || !isSidePanelActive) {
     indicator.style.opacity = '0';
+    bgHighlight.style.opacity = '0';
     return;
   }
 
   const bestPost = getBestPost();
   if (bestPost) {
-    const button = bestPost.querySelector(SELECTORS.LIKE_BTN) || bestPost.querySelector(SELECTORS.UNLIKE_BTN);
-    if (button) {
-      const rect = button.getBoundingClientRect();
-      const size = Math.max(rect.width, rect.height) * 1.2;
-      Object.assign(indicator.style, {
-        width: `${size}px`,
-        height: `${size}px`,
-        left: `${rect.left + rect.width / 2 - size / 2}px`,
-        top: `${rect.top + rect.height / 2 - size / 2}px`,
-        opacity: '1'
-      });
-      return;
-    }
+    const rect = bestPost.getBoundingClientRect();
+    
+    // Position the dotted border indicator to wrap the entire post
+    Object.assign(indicator.style, {
+      left: `${rect.left}px`,
+      top: `${rect.top}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      opacity: '1'
+    });
+
+    // bgHighlight is hidden via CSS, so we don't need to update it here
+    bgHighlight.style.opacity = '0';
+    return;
   }
   indicator.style.opacity = '0';
+  bgHighlight.style.opacity = '0';
 }
 
 function highlightElement(el) {

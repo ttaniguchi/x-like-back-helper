@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "X Liked-back Helper",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Xでいいねしてくれた人へのお返しを簡単にする支援ツール",
   "permissions": [
     "storage",
