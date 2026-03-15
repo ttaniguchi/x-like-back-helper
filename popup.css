@@ -1,11 +1,33 @@
 :root {
-  --primary-gradient: linear-gradient(135deg, #6e8efb, #a777e3);
-  --bg-color: rgba(255, 255, 255, 0.8);
-  --text-color: #333;
-  --secondary-text: #666;
-  --glass-bg: rgba(255, 255, 255, 0.6);
-  --glass-border: rgba(255, 255, 255, 0.2);
-  --shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+  --primary-color: #1D9BF0; /* X Blue */
+  --like-color: #F91880; /* X Pink */
+  
+  /* Light Theme */
+  --bg-color: #FFFFFF;
+  --text-color: #0F1419;
+  --secondary-text: #536471;
+  --border-color: #EFF3F4;
+  --hover-bg: rgba(15, 20, 25, 0.1);
+  --btn-primary-bg: #1D9BF0;
+  --btn-primary-text: #FFFFFF;
+  --btn-secondary-bg: #EFF3F4;
+  --btn-secondary-text: #0F1419;
+  --action-bg: #FFFFFF;
+  --inactive-overlay: rgba(0, 0, 0, 0.08); /* Light Mode: Dim Background */
+}
+
+[data-theme="dark"] {
+  --bg-color: #000000;
+  --text-color: #E7E9EA;
+  --secondary-text: #71767B;
+  --border-color: #2F3336;
+  --hover-bg: rgba(255, 255, 255, 0.1);
+  --btn-primary-bg: #1D9BF0;
+  --btn-primary-text: #FFFFFF;
+  --btn-secondary-bg: #EFF3F4;
+  --btn-secondary-text: #0F1419;
+  --action-bg: #000000;
+  --inactive-overlay: rgba(255, 255, 255, 0.12); /* Dark Mode: Brighten Background */
 }
 
 body {
@@ -13,30 +35,34 @@ body {
   height: 100vh;
   margin: 0;
   padding: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: var(--primary-gradient);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg-color);
   color: var(--text-color);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: filter 0.3s ease, opacity 0.3s ease;
+  transition: background-color 0.2s, color 0.2s, filter 0.3s ease, opacity 0.3s ease;
 }
 
-body.is-inactive {
-  filter: grayscale(0.9);
-  opacity: 0.7;
+/* Body inactive state handled via ::after overlay */
+
+body.is-inactive::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: var(--inactive-overlay);
+  pointer-events: none;
+  z-index: 9999;
 }
 
 .container {
   flex: 1;
-  background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border);
+  background: var(--bg-color);
   margin: 8px;
-  border-radius: 16px;
   padding: 16px;
-  box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -56,21 +82,17 @@ header img {
 }
 
 header h1 {
-  font-size: 1rem;
+  font-size: 1.2rem;
   margin: 0;
-  background: var(--primary-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-color);
   font-weight: 800;
 }
 
 .status-card {
-  background: rgba(255, 255, 255, 0.4);
-  padding: 10px;
-  border-radius: 12px;
+  background: var(--bg-color);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-color);
   margin-bottom: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .status-label {
@@ -81,6 +103,7 @@ header h1 {
 
 .status-value {
   font-weight: 600;
+  color: var(--text-color);
   font-size: 0.85rem;
 }
 
@@ -94,14 +117,12 @@ header h1 {
 .user-item {
   display: flex;
   align-items: center;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.3);
-  margin-bottom: 8px;
-  border-radius: 10px;
-  transition: all 0.3s ease;
+  padding: 12px 0;
+  background: var(--bg-color);
+  border-bottom: 1px solid var(--border-color);
+  transition: background-color 0.2s ease;
   overflow: hidden;
   cursor: pointer;
-  border: 1px solid transparent;
 }
 
 .user-item.removing {
@@ -116,13 +137,12 @@ header h1 {
 }
 
 .user-item:not(.is-inactive .user-item):hover {
-  background: rgba(255, 255, 255, 0.5);
-  transform: translateY(-1px);
+  background: var(--hover-bg);
 }
 
 /* Specific override for inactive hover */
 .is-inactive .user-item:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--bg-color);
   transform: none;
   cursor: default;
 }
@@ -132,7 +152,7 @@ header h1 {
   height: 36px;
   border-radius: 50%;
   margin-right: 12px;
-  background: #ddd;
+  background: var(--border-color);
 }
 
 .user-info {
@@ -151,19 +171,24 @@ header h1 {
 }
 
 .action-btn {
-  padding: 6px 12px;
-  border-radius: 20px;
+  padding: 8px 16px;
+  border-radius: 9999px; /* Fully rounded like X buttons */
   border: none;
-  background: var(--primary-gradient);
-  color: white;
-  font-size: 0.7rem;
-  font-weight: 600;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  font-size: 0.85rem;
+  font-weight: 700;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, background-color 0.2s;
+}
+
+.action-btn.primary {
+  background: var(--like-color);
+  color: #FFFFFF;
 }
 
 .action-btn:not(.is-inactive .action-btn):hover {
-  opacity: 0.8;
+  opacity: 0.9;
 }
 
 .is-inactive .action-btn:hover {
@@ -181,17 +206,17 @@ header h1 {
 }
 
 .is-done .action-label-flat {
-  color: #999;
+  color: var(--secondary-text);
 }
 
 .action-btn.secondary {
-  background: #efefef;
-  color: #333;
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
 }
 
 footer {
   text-align: center;
   padding: 10px;
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--secondary-text);
 }

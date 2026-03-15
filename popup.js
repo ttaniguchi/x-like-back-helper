@@ -11,12 +11,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     resetBtn: document.getElementById('reset-btn'),
     showDoneToggle: document.getElementById('show-done-toggle'),
     selfIcon: document.getElementById('self-icon-header'),
+    themeToggle: document.getElementById('theme-toggle'),
     likeBtn: document.getElementById('like-top-btn'),
     prevBtn: document.getElementById('prev-post-btn'),
     nextBtn: document.getElementById('next-post-btn')
   };
 
   let isUpdatingLocally = false;
+  
+  // --- Theme Management ---
+  const applyTheme = (theme) => {
+    document.documentElement.setAttribute('data-theme', theme);
+    els.themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
+  };
+
+  const loadTheme = () => {
+    chrome.storage.local.get(['theme'], (res) => {
+      if (res.theme) {
+        applyTheme(res.theme);
+      } else {
+        const wantsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        applyTheme(wantsDark ? 'dark' : 'light');
+      }
+    });
+  };
+
+  const toggleTheme = () => {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const newTheme = isDark ? 'light' : 'dark';
+    applyTheme(newTheme);
+    chrome.storage.local.set({ theme: newTheme });
+  };
 
   // --- Helpers ---
   const getActiveTab = async () => {
@@ -62,7 +87,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const path = new URL(url).pathname.split('/').filter(p => p);
       
       const isLikes = URL_PATTERNS.LIKES_PAGE.test(url);
-      const isPost = URL_PATTERNS.POST_DETAIL.test(url) && !isLikes;
+      const isPost = URL_PATTERNS.POST_DETAIL.test(url) && !isLikes && !url.includes('/analytics');
       const isProfile = path.length >= 1 && 
                         !['home', 'explore', 'notifications', 'messages', 'i', 'settings', 'search', 'bookmarks'].includes(path[0]) &&
                         !isPost && !isLikes;
@@ -72,7 +97,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Update Messages
       if (isLikes) {
-        els.status.innerHTML = '画面をスクロールしてください';
+        let label = 'いいね';
+        if (url.includes('/retweets')) label = 'リポスト';
+        else if (url.includes('/quotes')) label = '引用';
+        els.status.innerHTML = `画面をスクロールしてください<br><span style="font-size: 0.7rem; color: var(--secondary-text);">(${label}したユーザーを取得します)</span>`;
       } else if (isPost) {
         els.status.innerHTML = `
           <div style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; color: var(--primary-color);" id="inline-goto-likes">
@@ -85,7 +113,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
       } else {
         const isX = url.includes('x.com') || url.includes('twitter.com');
-        els.status.innerHTML = isEligible ? 'プロフィール / タイムラインを表示中' : (isX ? 'ポスト一覧ページを開いてください' : 'X.comを開いてください');
+        if (isEligible) {
+          els.status.innerHTML = 'プロフィール / タイムラインを表示中';
+        } else if (isX) {
+          els.status.innerHTML = 'ポスト一覧ページを開いてください';
+        } else {
+          els.status.innerHTML = `
+            <div style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; color: var(--primary-color);" id="inline-goto-x">
+              <span style="font-weight: bold; text-decoration: underline;">X.comを開いてください</span>
+            </div>`;
+          document.getElementById('inline-goto-x').onclick = () => {
+            chrome.tabs.create({ url: 'https://x.com/home' });
+          };
+        }
       }
 
       // Update Button States
@@ -154,7 +194,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     if (!els.userList.innerHTML) {
-      els.userList.innerHTML = '<div style="text-align:center;padding:20px;font-size:0.8rem;color:gray;">リストは空です</div>';
+      els.userList.innerHTML = 
+        '<div style="text-align:center;padding:20px;font-size:0.8rem;color:var(--secondary-text);line-height:1.6;">' +
+          '<div style="margin-bottom: 8px; font-weight: bold; color: var(--text-color);">自分のポストを選んで、<br>アクティビティをチェック！</div>' +
+          '<div>「いいね」「リポスト」「引用」一覧から<br>リストを取得できます。</div>' +
+        '</div>';
     }
   };
 
@@ -211,6 +255,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
+  els.themeToggle?.addEventListener('click', toggleTheme);
+
   // Keyboard Shortcuts
   document.addEventListener('keydown', (e) => {
     const key = e.key.toLowerCase();
@@ -255,6 +301,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // --- Initial Start ---
+  loadTheme();
   loadAll();
   refreshSelfInfo();
   setTimeout(checkPageStatus, 200);
