@@ -5,65 +5,64 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>X Liked-back Helper</title>
   <link rel="stylesheet" href="popup.css">
-  <style>
-    .user-item.is-done {
-      opacity: 0.5;
-      filter: grayscale(0.8);
-    }
-    .user-item.is-done .action-btn {
-      background: #ccc;
-      cursor: default;
-      pointer-events: none;
-    }
-    .action-btn:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-      filter: grayscale(1);
-    }
-  </style>
 </head>
 <body>
   <div class="container">
-    <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-      <h1 style="margin: 0; font-size: 1.2rem;">X Liked-back Helper</h1>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <button id="theme-toggle" class="icon-btn" title="テーマ切り替え" style="background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--text-color); padding: 4px;">🌙</button>
-        <div id="self-icon-header" class="user-avatar" style="width: 36px; height: 36px; cursor: pointer; margin: 0; background-color: var(--border-color); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 0.6rem; color: var(--text-color); border-radius: 50%;" title="マイホームへ">HOME</div>
+    <header>
+      <h1>X Liked-back Helper</h1>
+      <div class="header-actions">
+        <button id="theme-toggle" class="icon-btn" title="テーマ切り替え">🌙</button>
+        <div id="self-icon-header" class="user-avatar-header" title="マイホームへ">HOME</div>
       </div>
     </header>
 
-    <div class="status-card">
-      <div id="current-status" class="status-value">いいねを返したいポストを開いて</div>
-    </div>
 
-    <div class="controls" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; background: var(--bg-color); padding: 8px 12px; border-radius: 12px; border: 1px solid var(--border-color);">
-      <span id="list-count" style="font-size: 0.85rem; font-weight: bold; color: var(--primary-color); white-space: nowrap;">0 / 0</span>
-      
-      <label style="font-size: 0.75rem; color: var(--secondary-text); display: flex; align-items: center; cursor: pointer; white-space: nowrap;">
-        <input type="checkbox" id="show-done-toggle" style="margin-right: 4px;"> 完了表示
-      </label>
-      
-      <button id="reset-btn" class="action-btn secondary" style="padding: 4px 10px; font-size: 0.65rem;">リセット</button>
-    </div>
+    <!-- Main View: Likes List -->
+    <div id="likes-view">
+      <div class="status-card">
+        <div class="status-value" id="current-status"></div>
+      </div>
 
-    <div id="timeline-actions" style="margin-bottom: 12px;">
-      <div style="display: flex; gap: 8px;">
-        <button id="next-post-btn" class="action-btn secondary" style="flex: 1; padding: 10px; font-size: 0.9rem;" title="次のポストへ (J)">↓(J)</button>
-        <button id="prev-post-btn" class="action-btn secondary" style="flex: 1; padding: 10px; font-size: 0.9rem;" title="前のポストへ (K)">↑(K)</button>
-        <button id="like-top-btn" class="action-btn primary" style="flex: 3; padding: 10px; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; gap: 4px;">
-          <span>Like(L)</span>
-          <span style="font-size: 1rem;">❤️</span>
-        </button>
+      <div class="controls-row">
+        <div class="list-stat">
+          <span class="stat-count" id="list-count">0 / 0</span>
+          <label class="done-toggle">
+            <input type="checkbox" id="show-done-toggle"> 完了表示
+          </label>
+        </div>
+        <button id="reset-btn" class="action-btn secondary small">リセット</button>
+      </div>
+
+      <div id="timeline-actions">
+        <div class="nav-btns">
+          <button id="prev-post-btn" class="action-btn secondary nav-btn" title="前のポストへ (K)">↑</button>
+          <button id="next-post-btn" class="action-btn secondary nav-btn" title="次のポストへ (J)">↓</button>
+          <button id="like-top-btn" class="action-btn primary like-btn">
+            <span>Like(L)</span> ❤️
+          </button>
+        </div>
+      </div>
+
+      <div id="user-list" class="user-list">
+        <div class="empty-state">対象ページを開くと自動で追加されます。</div>
       </div>
     </div>
 
-    <div class="section-title" style="font-size: 0.8rem; font-weight: 700; margin-bottom: 8px; color: var(--text-color);">
-      ユーザーリスト
-    </div>
+    <!-- Hidden View: Follower Audit -->
+    <div id="audit-view" style="display: none;">
+      <div class="status-card">
+        <div class="status-value" id="audit-status"></div>
+      </div>
 
-    <div id="user-list" class="user-list">
-      <div class="empty-state" style="text-align: center; padding: 20px; color: var(--secondary-text); font-size: 0.8rem;">
-        対象ページを開いてスクロールすると自動で追加されます。
+      <div class="controls-row">
+        <div class="list-stat">
+          <span class="stat-count" id="audit-count">0</span> 件のワンウェイ
+        </div>
+        <button id="reset-audit-btn" class="action-btn secondary small">リセット</button>
+      </div>
+
+      <div id="audit-list" class="user-list audit-mode">
+        <!-- Audit users will be listed here -->
       </div>
     </div>
   </div>

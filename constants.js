@@ -4,6 +4,7 @@
 
 const STORAGE_KEYS = {
   USER_LIST: 'userList',
+  UNREQUITED_LIST: 'unrequitedList',
   SELF_INFO: 'selfInfo'
 };
 
@@ -30,6 +31,7 @@ const SELECTORS = {
 const URL_PATTERNS = {
   LIKES_PAGE: /\/status\/\d+\/(likes|retweets|quotes)/,
   POST_DETAIL: /\/status\/\d+/,
+  FOLLOWING_LIST: /\/(\w+)\/following/,
   HOME: /\/home/,
   SEARCH: /\/search/,
   EXPLORE: /\/explore/
